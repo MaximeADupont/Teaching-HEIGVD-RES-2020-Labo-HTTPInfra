@@ -2,54 +2,109 @@
 
 IP de ma vm docker : 192.168.99.100
 
-## Step 1: Static HTTP server with apache httpd
+## Step 2: Dynamic HTTP server with express.js
 
-### Image Docker
-L'image docker que j'ai utilisé est l'image officielle PHP :   
-https://hub.docker.com/_/php/
+### Node
+J'utilise la version 12.17 de node, on peut voir sur : https://nodejs.org/en/ que c'est la dernière version stable.
 
-Voici donc les lignes que j'ajoute au dockerfile : 
- ```dockerfile  
-FROM php:7.2-apache
- 
-COPY src/ /var/www/html/
+Contenu du Dockerfile :
+```dockerfile
+FROM node:12.17
+
+COPY src /opt/app
+
+CMD ["node", "/opt/app/index.js"]
 ```
 
-### Exploration de l'image
-Je lance l'image avec :
-* `docker run -d -p 8000:80 php:7.2-apache`  
+Puisque que l'on copie le contenu de src dans notre image, on crée le dossier `/src`. 
+Une fois dans ce dossier :
+* On lance la commande `npm init`.
+* Simplement remplir les champs comme montré dans la vidéo.
+* On installe le module `chance`
+    * `npm install --save chance`
+* On crée le fichier `index.js` et on le remplit avec :
+```js
+var Chance = require('Chance');
+var chance = new Chance();
 
-Je peux utiliser `docker logs <nomducontainer>` pour vérifier que apache a démarré normalement. ( Le nom du container dans mon cas est serene_engelbart).
+console.log("Bonjour " + chance.name());
+```
+* En tapant la commande `node index.js` on peut voir que cela fonctionne correctement et que l'affichage est bien "Bonjour + <nom_aléatoire>"
 
-Maintenant j'utilise `docker exec -it serene_engelbart /bin/bash` pour lancer un terminal dans mon container.
+* Il s'agit maintenant de build l'image voulue : `docker build -t res/express_students_node .`
 
-Pour accéder à mon serveur depuis mon navigateur je me connecte à l'addresse `192.168.99.100:8000`.
+* Enfin il est temps de run notre image : `docker run res/express_students`
 
-### Ajout de contenu
+On peut alors voir que notre application fonctionne pour l'instant
 
-* Je crée un fichier content dans notre image docker. 
-Il faut donc éditer le dockerfile en changeant `/src` en `/content`.
+### Express
 
-* Maintenant il s'agit de build l'image docker : 
-` docker build -t res/apache_php .`
+* `npm install --save express` même fonctionnement que pour le module chance, dans le fichier src.
 
-*  Et enfin de la run avec la commande : 
-`docker run -d -p 8000:80 res/apache_php .`
+* On utilise la même base qu'avant en modifiant index.js pour que son contenu devienne :
+```js
+var Chance = require('chance');
+var chance = new Chance();
 
-Comme dit dans la vidéo, on peut lancer plusieurs containers basés sur cette image, mais pour cela il faut changer le numéro de port utilisé pour le port-mapping de notre VM.
+var express = require('express');
+var app = express();
 
-### Ajout d'un template
- 
-Template que j'ai utilisé :  
-https://bootstrapmade.com/free-bootstrap-landing-page/
+app.get('/test', function(req,res){
+	res.send("Say hello to my little test");
+});
 
-Rien de bien compliqué, unzip le download et copier le contenu du dossier dans notre fichier `content/`.
+app.get('/', function(req, res){
+	res.send("Hello RES");
+});
 
-Il s'agit maintenant de rebuild l'image comme précédemment, puis ensuite de la Run.
+app.listen(3000, function(){
+	console.log('Accepting HTTP requests on port 3000.');
+});
+```
 
-J'ai modifié rapidement le template pour que l'on voit l'image de fond, et j'ai changé le texte d'acceuil et le texte du bouton.
+* Après ces quelques tests je modifie `index.js` afin d'avoir une application similaire à la vidéo : 
+```js
+var Chance = require('chance');
+var chance = new Chance();
 
-Evidemment à chaque modification il faut rebuild l'image et relancer un nouveau container (si le dernier container n'est pas fermé, ne pas oublier d'utiliser un différent numéro de port).
+var express = require('express');
+var app = express();
 
+app.get('/test', function(req,res){
+	res.send("Say hello to my little test");
+});
 
+app.get('/', function(req, res){
+	res.send( generateLocations());
+});
+
+app.listen(3000, function(){
+	console.log('Accepting HTTP requests on port 3000.');
+});
+
+//quick function that generates a random location : random city in random state in random country
+function generateLocations(){
+	var numberOfLocations = chance.integer({min: 0, max: 10});
+	console.log("Creating " + numberOfLocations + " random locations ...");
+	var locations = [];
+	for(var i = 0; i < numberOfLocations; ++i){
+		var city = chance.city();
+		var state = chance.state({full: true});
+		var country = chance.country({full: true});
+		locations.push({
+			city: city,
+			state: state,
+			country: country
+		});
+	}
+	console.log(locations);
+	return locations;
+}
+```
+
+* Maintenant je suis prêt à build mon image docker :  
+`docker build -t res/express_students_node .`
+
+* Enfin il s'agit de la lancer notre image : 
+`docker run -p 8000:3000 res/express_students_node`. Je peux donc accéder à mon serveur à l'addresse 192.168.99.100 via mon navigateur pour obtenir des endroits aléatoires.
 

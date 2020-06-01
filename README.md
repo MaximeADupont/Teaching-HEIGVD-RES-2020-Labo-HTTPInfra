@@ -5,109 +5,104 @@ IP de ma vm docker : 192.168.99.100
 #### Remarque
 J'ai laissé les nodes_modules dans le git pour m'assurer du bon fonctionnement du serveur (par manque de familiarité avec node.js je ne sais pas quels fichiers je peux ignorer).
 
-## Step 2: Dynamic HTTP server with express.js
+## Step 3: Reverse proxy with apache (static configuration)
 
-### Node
-J'utilise la version 12.17 de node, on peut voir sur : https://nodejs.org/en/ que c'est la dernière version stable.
+On lance des containers avec les images créées précédemment et je leur donne un nom pour qu'elle soient plus faciles d'accès :  
+`docker run -d --name apache_static res/apache_php`  
+`docker run -d --name express_dynamic res/express_students_node`
 
-Contenu du Dockerfile :
+Il s'agit maintenant d'obtenir l'ip des deux containers avec les commandes :  
+* `docker inspect apache_static | grep -i ipaddress` qui nous donne comme IP : *172.17.0.2*
+* `docker inspect express_dynamic | grep -i ipaddress` qui nous donne comme IP : *172.17.0.3*
+
+On run maintenant un container en mode interactif :  
+`docker run -p 8080:80 -it php:7.2-apache /bin/bash `  
+
+Dans cet invité de commande on se deplace vers les configs : 
+`cd /etc/apache2/sites-available`
+
+On copie la config par defaut dans un nouveau fichier :
+`cp 000-default.conf 001-reverse-proxy.conf`
+
+On installe le nécessaire pour éditer le fichier :
+`apt-get update` puis `apt-get install vim`
+
+On édite le fichier que l'on vient de créer : 
+``` 
+<VirtualHost *:80>
+        ServerName demo.res.ch                                                                                                                                                                                                                          
+        ErrorLog ${APACHE_LOG_DIR}/error.log
+        CustomLog ${APACHE_LOG_DIR}/access.log combined
+
+        ProxyPass "/api/locations/" "http://172.17.0.3:3000/"
+        ProxyPassReverse "/api/locatoins/" "http://172.17.0.3:3000/"
+
+        ProxyPass "/" "http://172.17.0.2:80"
+        ProxyPassReverse "/" "http://172.17.0.2:80/"
+</VirtualHost>                                                                     
+``` 
+
+Il faut maintenant activer le nouveau site : 
+`a2ensite 001*` (on utilise un wildcard pour ne pas taper tout le nom du site puisqu'il y a simplement un seul site dont le nom commence par 001).
+
+On nous demande alors de lancer `service apache2 reload` pour activer ce changement.
+
+Il faut activer différent module pour que cela fonctionne :
+* `a2enmod proxy`
+* `a2enmod proxy_http`
+
+Puis nous devons restart apache2 ( `service apache2 restart`).
+
+### Set up de l'image docker
+
+On crée le dockerfile :
 ```dockerfile
-FROM node:12.17
+FROM php:7.2-apache
 
-COPY src /opt/app
+COPY conf/ /etc/apache2
 
-CMD ["node", "/opt/app/index.js"]
+RUN a2enmod proxy proxy_http
+RUN a2ensite 000-* 001-*
 ```
 
-Puisque que l'on copie le contenu de src dans notre image, on crée le dossier `/src`. 
-Une fois dans ce dossier :
-* On lance la commande `npm init`.
-* Simplement remplir les champs comme montré dans la vidéo.
-* On installe le module `chance`
-    * `npm install --save chance`
-* On crée le fichier `index.js` et on le remplit avec :
-```js
-var Chance = require('Chance');
-var chance = new Chance();
-
-console.log("Bonjour " + chance.name());
+On crée un directory conf contenant un deuxieme directory sites_available qui contient : 
+* 000-default.conf :
 ```
-* En tapant la commande `node index.js` on peut voir que cela fonctionne correctement et que l'affichage est bien "Bonjour + <nom_aléatoire>"
-
-* Il s'agit maintenant de build l'image voulue : `docker build -t res/express_students_node .`
-
-* Enfin il est temps de run notre image : `docker run res/express_students`
-
-On peut alors voir que notre application fonctionne pour l'instant
-
-### Express
-
-* `npm install --save express` même fonctionnement que pour le module chance, dans le fichier src.
-
-* On utilise la même base qu'avant en modifiant index.js pour que son contenu devienne :
-```js
-var Chance = require('chance');
-var chance = new Chance();
-
-var express = require('express');
-var app = express();
-
-app.get('/test', function(req,res){
-	res.send("Say hello to my little test");
-});
-
-app.get('/', function(req, res){
-	res.send("Hello RES");
-});
-
-app.listen(3000, function(){
-	console.log('Accepting HTTP requests on port 3000.');
-});
+<VirtualHost *:80>
+</VirtualHost>
 ```
 
-* Après ces quelques tests je modifie `index.js` afin d'avoir une application similaire à la vidéo : 
-```js
-var Chance = require('chance');
-var chance = new Chance();
+* 001-reverse-proxy.conf :
 
-var express = require('express');
-var app = express();
+```
+<VirtualHost *:80>
+        ServerName demo.res.ch                                                                                                                                                                                                                          
+        #ErrorLog ${APACHE_LOG_DIR}/error.log
+        #CustomLog ${APACHE_LOG_DIR}/access.log combined
 
-app.get('/test', function(req,res){
-	res.send("Say hello to my little test");
-});
+        ProxyPass "/api/locations/" "http://172.17.0.3:3000/"
+        ProxyPassReverse "/api/locatoins/" "http://172.17.0.3:3000/"
 
-app.get('/', function(req, res){
-	res.send( generateLocations());
-});
-
-app.listen(3000, function(){
-	console.log('Accepting HTTP requests on port 3000.');
-});
-
-//quick function that generates a random location : random city in random state in random country
-function generateLocations(){
-	var numberOfLocations = chance.integer({min: 0, max: 10});
-	console.log("Creating " + numberOfLocations + " random locations ...");
-	var locations = [];
-	for(var i = 0; i < numberOfLocations; ++i){
-		var city = chance.city();
-		var state = chance.state({full: true});
-		var country = chance.country({full: true});
-		locations.push({
-			city: city,
-			state: state,
-			country: country
-		});
-	}
-	console.log(locations);
-	return locations;
-}
+        ProxyPass "/" "http://172.17.0.2:80"
+        ProxyPassReverse "/" "http://172.17.0.2:80/"
+</VirtualHost>  
 ```
 
-* Maintenant je suis prêt à build mon image docker :  
-`docker build -t res/express_students_node .`
+Maintenant il s'agit de build l'image : 
+`docker build -t res/apache_rp .`
 
-* Enfin il s'agit de la lancer notre image : 
-`docker run -p 8000:3000 res/express_students_node`. Je peux donc accéder à mon serveur à l'addresse 192.168.99.100(:8000) via mon navigateur pour obtenir des endroits aléatoires.
+Nous pouvons maintenant la run :
+`docker run -p 8080:80 res/apache_rp`
 
+Sous windows, j'ai modifié le fichier `C:\Windows\System32\drivers\etc\hosts` avec les privilèges admin pour pouvoir accéder au site depuis mon navigateur. J'ai ajouté la ligne `192.168.99.100 demo.res.ch`.
+
+> You can explain and prove that the static and dynamic servers cannot be reached directly (reverse proxy is a single entry point in the infra).
+
+Puisque nous n'avons pas port mappé les containers docker, le seul moyen d'y accéder est le reverse proxy
+
+> You are able to explain why the static configuration is fragile and needs to be improved.
+
+Tout simplement parce que l'IP des containers docker est hardcodée, donc si pour une raison X ou Y lorsque l'on relance ces containers l'addresse change, alors plus rien ne fonctionne.
+
+### Problème connu : 
+Je n'arrive pas à expliquer pourquoi, mais lorsque j'essaye d'envoyer une requete à mes containers via telnet, elle ne passe pas. Tout fonctionne normalement via mon navigateur cependant.

@@ -2,6 +2,9 @@
 
 IP de ma vm docker : 192.168.99.100
 
+#### Remarque
+J'ai laissé les nodes_modules dans le git pour m'assurer du bon fonctionnement du serveur (par manque de familiarité avec node.js je ne sais pas quels fichiers je peux ignorer).
+
 ## Step 2: Dynamic HTTP server with express.js
 
 ### Node
@@ -106,5 +109,5 @@ function generateLocations(){
 `docker build -t res/express_students_node .`
 
 * Enfin il s'agit de la lancer notre image : 
-`docker run -p 8000:3000 res/express_students_node`. Je peux donc accéder à mon serveur à l'addresse 192.168.99.100 via mon navigateur pour obtenir des endroits aléatoires.
+`docker run -p 8000:3000 res/express_students_node`. Je peux donc accéder à mon serveur à l'addresse 192.168.99.100(:8000) via mon navigateur pour obtenir des endroits aléatoires.
 
